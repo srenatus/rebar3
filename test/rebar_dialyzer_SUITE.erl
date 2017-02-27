@@ -15,6 +15,7 @@
          update_app_plt_native/1,
          build_release_plt/1,
          plt_apps_option/1,
+         benchmark/1,
          exclude_and_extra/1]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -63,7 +64,8 @@ all() ->
 groups() ->
     [{empty, [empty_base_plt, empty_app_plt, empty_app_succ_typings]},
      {build_and_check, [build_release_plt, plt_apps_option, exclude_and_extra]},
-     {update, [update_base_plt, update_app_plt_native]}].
+     {update, [update_base_plt, update_app_plt_native]},
+     {benchmark, [benchmark]}].
 
 empty_base_plt(Config) ->
     AppDir = ?config(apps, Config),
@@ -238,6 +240,74 @@ update_app_plt_native_(Config) ->
     ?assertEqual(DialyzerBeam, code:which(dialyzer)),
 
     ?assertEqual(LastMod, filelib:last_modified(NativeCache)).
+
+benchmark(Config) ->
+    AppDir = ?config(apps, Config),
+    RebarConfig = ?config(rebar_config, Config),
+    Plt = ?config(plt, Config),
+    BasePlt = ?config(base_plt, Config),
+    file:delete(Plt),
+    file:delete(BasePlt),
+
+    {value, {dialyzer, Opts}, Rest} = lists:keytake(dialyzer, 1, RebarConfig),
+    Name = rebar_test_utils:create_random_name("app1_"),
+    Vsn = rebar_test_utils:create_random_vsn(),
+    rebar_test_utils:create_app(AppDir, Name, Vsn, [erts]),
+
+
+    ETime0 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+
+    ETime1 = os:timestamp(),
+    EDiff0 = timer:now_diff(ETime1, ETime0),
+    ok = file:delete(Plt),
+    ok = file:delete(BasePlt),
+
+    ETime2 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+
+    ETime3 = os:timestamp(),
+    EDiff1 = timer:now_diff(ETime3, ETime2),
+    ok = file:delete(Plt),
+
+    %% without deleting base_plt
+    ETime4 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+
+    ETime5 = os:timestamp(),
+    EDiff2 = timer:now_diff(ETime5, ETime4),
+    ok = file:delete(Plt),
+    ok = file:delete(BasePlt),
+
+    RebarConfig2 = [{dialyzer, [{native, true} | Opts]} | Rest],
+
+    Time0 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig2, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+
+    Time1 = os:timestamp(),
+    Diff0 = timer:now_diff(Time1, Time0),
+    ok = file:delete(Plt),
+    ok = file:delete(BasePlt),
+
+    Time2 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig2, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+    Time3 = os:timestamp(),
+    Diff1 = timer:now_diff(Time3, Time2),
+    ok = file:delete(Plt),
+    Time4 = os:timestamp(),
+    rebar_test_utils:run_and_check(Config, RebarConfig2, ["dialyzer"],
+                                   {ok, [{app, Name}]}),
+    Time5 = os:timestamp(),
+    Diff2 = timer:now_diff(Time5, Time4),
+    ok = file:delete(Plt),
+    ok = file:delete(BasePlt),
+    io:format(user, "non-native 0, non-native 1, non-native 2, native 0, native 1, native 2~n~p,~p,~p,~p,~p,~p~n", [EDiff0, EDiff1, EDiff2, Diff0, Diff1, Diff2]),
+    ok.
 
 build_release_plt(Config) ->
     AppDir = ?config(apps, Config),
